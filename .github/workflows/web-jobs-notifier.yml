@@ -1,0 +1,64 @@
+name: Web Jobs Notifier (Free 24/7)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-jobs-notifier
+  cancel-in-progress: true
+
+jobs:
+  run-notifier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run one notifier cycle
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GROUP_ID: ${{ secrets.GROUP_ID }}
+          POLL_SECONDS: "60"
+          MAX_ALERTS_PER_CYCLE: "5"
+          MAX_POST_AGE_HOURS: "24"
+          REQUIRE_REMOTE: "1"
+          STARTUP_PING: "0"
+          DAILY_SUMMARY: "0"
+          RUN_ONCE: "1"
+        run: node web-job-notifier.js
+
+      - name: Send manual-run test ping
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GROUP_ID: ${{ secrets.GROUP_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${GROUP_ID}\",\"text\":\"GitHub Actions check: Web jobs notifier workflow ran successfully.\"}" > /dev/null
+
+      - name: Persist seen state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add seenWebJobs.json
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update web notifier state [skip ci]"
+            git push
+          else
+            echo "No state changes"
+          fi
