@@ -1,3 +1,4 @@
 node_modules/
 .env
 _tmp_*.json
+__pycache__/
